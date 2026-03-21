@@ -36,6 +36,9 @@ except ImportError:
 
 try:
     import requests
+except ImportError:
+    print("Zainstaluj: pip install requests")
+    sys.exit(1)
 
 def compact_named_votes(output):
     """Convert named_votes from string arrays to indexed format for smaller JSON."""
@@ -81,11 +84,6 @@ def save_split_output(output, out_path):
     }
     with open(out_path, "w", encoding="utf-8") as f:
         _json.dump(index, f, ensure_ascii=False, separators=(",", ":"))
-
-
-except ImportError:
-    print("Zainstaluj: pip install requests")
-    sys.exit(1)
 
 
 # ============================================================================
