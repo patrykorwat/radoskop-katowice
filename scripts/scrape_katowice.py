@@ -6,10 +6,12 @@ Scraper danych głosowań Rady Miasta Katowice.
 eSesja ma dostęp do głosowań bez JavaScript.
 
 Struktura eSesja:
-  1. Lista sesji: https://katowice.esesja.pl/glosowania/
-  2. Sesja: /glosowania/{session_id} — lista głosowań
-  3. Głosowanie: /glosowania/{vote_id}/{hash} — wyniki per radny
-     — Format: tabela z kolumnami: Lp. / Radny / Głos (ZA / PRZECIW / WSTRZYMAŁ SIĘ / NIEOBECNY)
+  1. Archiwum glosowan: https://katowice.esesja.pl/glosowania/
+     Linki do sesji w formacie /listaglosowan/{UUID}
+  2. Lista glosowan w sesji: /listaglosowan/{UUID}
+     Linki do pojedynczych glosowan /glosowanie/{ID}/{HASH}
+  3. Wyniki glosowania: /glosowanie/{ID}/{HASH}
+     div.wim > h3 (kategoria: ZA/PRZECIW/...) > div.osobaa (nazwisko)
 
 UWAGA: Uruchom lokalnie — sandbox Cowork blokuje domeny.
 
@@ -145,173 +147,254 @@ COUNCILORS = {
 }
 
 
+# Build flexible name lookup: eSesja uses "Lastname Firstname"
+# while COUNCILORS uses "Firstname Lastname".
+def _build_name_lookup(councilors: dict[str, str]) -> dict[str, str]:
+    lookup = {}
+    for name, club in councilors.items():
+        lookup[name] = club
+        parts = name.split()
+        if len(parts) >= 2:
+            lookup[f"{parts[-1]} {' '.join(parts[:-1])}"] = club
+            lookup[f"{parts[-1]} {parts[0]}"] = club
+    return lookup
+
+_CLUB_LOOKUP = _build_name_lookup(COUNCILORS)
+
+
+def resolve_club(name: str) -> str:
+    """Resolve a councillor name (any format) to their club."""
+    if name in _CLUB_LOOKUP:
+        return _CLUB_LOOKUP[name]
+    parts = name.split()
+    if parts:
+        last = parts[0]
+        for key, club in _CLUB_LOOKUP.items():
+            if key.split()[0] == last or key.split()[-1] == last:
+                return club
+    return "?"
+
+
+# Polish month name mapping
+MONTHS_PL = {
+    "stycznia": 1, "lutego": 2, "marca": 3, "kwietnia": 4,
+    "maja": 5, "czerwca": 6, "lipca": 7, "sierpnia": 8,
+    "września": 9, "października": 10, "listopada": 11, "grudnia": 12,
+}
+
+
 # ============================================================================
-# Step 1: Fetch and parse session list (voting archive)
+# Step 1: Fetch session list from eSesja /glosowania/ archive
 # ============================================================================
 
-def fetch_votes_list(session, debug=False):
-    """Pobiera listę wszystkich głosowań z archiwum."""
-    if debug:
-        print(f"[DEBUG] GET {ESESJA_VOTES_LIST}")
-
-    try:
-        resp = session.get(ESESJA_VOTES_LIST, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
-        return resp.text
-    except Exception as e:
-        print(f"BŁĄD: Nie można pobrać listy głosowań: {e}")
-        raise
+def fetch_soup(http_session, url):
+    """GET a page and return BeautifulSoup."""
+    resp = http_session.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    return BeautifulSoup(resp.text, "html.parser")
 
 
-def parse_votes_list(html, debug=False):
-    """Parsuje listę sesji/głosowań z archiwum.
+def fetch_session_list(http_session, debug=False):
+    """Fetch all session entries from the paginated /glosowania/ archive.
 
-    Szuka tabel z głosowaniami — każdy wiersz to głosowanie z:
-    - Linkiem do szczegółów
-    - Datą sesji
-    - Liczbą głosów
+    eSesja lists sessions as <a href="/listaglosowan/{UUID}"> with text like
+    "sesja Rady Miasta Katowice w dniu 20 marca 2026, godz. 11:00".
+    Pages: /glosowania/, /glosowania/2, /glosowania/3, ...
     """
-    soup = BeautifulSoup(html, "html.parser")
-
     sessions = []
-    votes_meta = []
+    page = 1
 
-    # Szukamy tabel z danymi głosowań
-    tables = soup.find_all("table")
-    for table in tables:
-        rows = table.find_all("tr")[1:]  # Skip header
+    while True:
+        url = ESESJA_VOTES_LIST if page == 1 else f"{ESESJA_VOTES_LIST}{page}"
+        if debug:
+            print(f"[DEBUG] GET {url}")
 
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) < 3:
+        try:
+            soup = fetch_soup(http_session, url)
+        except Exception as e:
+            print(f"  Blad pobierania {url}: {e}")
+            break
+
+        found_on_page = 0
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/listaglosowan/" not in href:
                 continue
 
-            # Pierwsza komórka zwykle zawiera numer/datę, ostatnia link
-            link_cell = cells[-1]
-            a = link_cell.find("a")
+            text = a.get_text(strip=True)
 
-            if not a:
-                continue
-
-            href = a.get("href", "")
-            if not href.startswith("/glosowania/"):
-                continue
-
-            # Ekstraktuj vote_id i hash z URL
-            m = re.search(r"/glosowania/(\d+)/([a-f0-9]+)", href)
+            # Extract date from "w dniu 20 marca 2026"
+            m = re.search(r'w\s+dniu\s+(\d{1,2})\s+(\w+)\s+(\d{4})', text)
             if not m:
                 continue
 
-            vote_id = m.group(1)
-            vote_hash = m.group(2)
+            day = int(m.group(1))
+            month_name = m.group(2).lower()
+            year = int(m.group(3))
+            month = MONTHS_PL.get(month_name)
+            if not month:
+                continue
 
-            # Tekst z komórek
-            text_parts = [cell.get_text(strip=True) for cell in cells]
+            date_str = f"{year}-{month:02d}-{day:02d}"
+            full_url = href if href.startswith("http") else ESESJA_BASE + href
 
-            votes_meta.append({
-                "vote_id": vote_id,
-                "vote_hash": vote_hash,
-                "url": ESESJA_BASE + href,
-                "text": text_parts,
+            sessions.append({
+                "date": date_str,
+                "url": full_url,
+                "title": text,
             })
+            found_on_page += 1
+
+        if found_on_page == 0:
+            break
+
+        # Check for next page
+        next_link = soup.find("a", href=re.compile(rf'/glosowania/{page + 1}\b'))
+        if not next_link:
+            break
+        page += 1
+
+    # Deduplicate by URL
+    seen = set()
+    unique = []
+    for s in sessions:
+        if s["url"] not in seen:
+            seen.add(s["url"])
+            unique.append(s)
+
+    # Filter by kadencja start date
+    kadencja_start = KADENCJE["2024-2029"]["start"]
+    filtered = [s for s in unique if s["date"] >= kadencja_start]
 
     if debug:
-        print(f"[DEBUG] Znaleziono {len(votes_meta)} głosowań")
+        print(f"[DEBUG] {len(unique)} sesji ogolnie, {len(filtered)} w kadencji 2024-2029")
 
-    return votes_meta
+    return sorted(filtered, key=lambda x: x["date"])
 
 
 # ============================================================================
-# Step 2: Fetch and parse individual vote results
+# Step 2: Fetch votes from a session's /listaglosowan/ page, then each vote
 # ============================================================================
 
-def fetch_vote_detail(session, vote_url, debug=False):
-    """Pobiera szczegóły jednego głosowania."""
-    if debug:
-        print(f"[DEBUG] GET {vote_url}")
-
+def fetch_session_votes(http_session, session_info, debug=False):
+    """Fetch /listaglosowan/UUID page, collect /glosowanie/ID/HASH links,
+    then fetch each vote detail page.
+    """
     try:
-        resp = session.get(vote_url, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
-        return resp.text
+        soup = fetch_soup(http_session, session_info["url"])
+    except Exception as e:
+        print(f"    Blad pobierania sesji: {e}")
+        return []
+
+    # Collect unique /glosowanie/ID/HASH links
+    seen_urls = set()
+    vote_links = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if "/glosowanie/" not in href or "/listaglosowan/" in href:
+            continue
+        url = href if href.startswith("http") else ESESJA_BASE + href
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        vote_links.append(url)
+
+    if debug:
+        print(f"    [DEBUG] {len(vote_links)} linkow do glosowan")
+
+    votes = []
+    for idx, url in enumerate(vote_links):
+        vote = fetch_single_vote(http_session, url, session_info, idx, debug)
+        if vote:
+            votes.append(vote)
+        time.sleep(DELAY * 0.5)
+
+    return votes
+
+
+def fetch_single_vote(http_session, url, session_info, vote_idx, debug=False):
+    """Fetch a single /glosowanie/ID/HASH page and parse named results.
+
+    eSesja HTML structure:
+      <div class='wim'><h3>ZA<span class='za'> (30)</span></h3>
+        <div class='osobaa'>Surname FirstName</div>
+      </div>
+    """
+    try:
+        soup = fetch_soup(http_session, url)
     except Exception as e:
         if debug:
-            print(f"[DEBUG] Błąd pobrania {vote_url}: {e}")
+            print(f"    [DEBUG] Blad pobierania {url}: {e}")
         return None
 
-
-def parse_vote_detail(html, vote_url, debug=False):
-    """Parsuje szczegóły głosowania.
-
-    Szuka:
-    - Tematu głosowania
-    - Tabeli z imieniem radnego i głosem (ZA/PRZECIW/WSTRZYMAŁ SIĘ/NIEOBECNY)
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Szukaj tematu
+    # Extract topic from h1
     topic = ""
     h1 = soup.find("h1")
     if h1:
-        topic = h1.get_text(strip=True)
-    else:
-        # Spróbuj znaleźć w divach z klasą
-        for div in soup.find_all("div", class_="title"):
-            topic = div.get_text(strip=True)
-            if topic:
-                break
+        topic = h1.get_text(strip=True)[:500]
+    # Clean eSesja prefixes
+    topic = re.sub(r'^Wyniki g\u0142osowania jawnego w sprawie:\s*', '', topic).strip()
+    topic = re.sub(r'^Wyniki g\u0142osowania w sprawie:?\s*', '', topic).strip()
+    topic = re.sub(r'^G\u0142osowanie\s+w\s+sprawie\s+', '', topic).strip()
+    if not topic:
+        topic = f"Glosowanie {vote_idx + 1}"
 
-    # Parsuj tabelę z głosami
-    votes_detail = {
-        "topic": topic,
-        "counts": {"za": 0, "przeciw": 0, "wstrzymal_sie": 0, "nieobecni": 0},
-        "named_votes": {"za": [], "przeciw": [], "wstrzymal_sie": [], "brak_glosu": [], "nieobecni": []},
+    named_votes = {
+        "za": [],
+        "przeciw": [],
+        "wstrzymal_sie": [],
+        "brak_glosu": [],
+        "nieobecni": [],
     }
 
-    table = soup.find("table")
-    if not table:
-        return votes_detail
+    counts = {
+        "za": 0,
+        "przeciw": 0,
+        "wstrzymal_sie": 0,
+        "brak_glosu": 0,
+        "nieobecni": 0,
+    }
 
-    rows = table.find_all("tr")[1:]  # Skip header
+    # CSS class on div.osobaa determines vote type:
+    # osobaa za, osobaa przeciw, osobaa wstrzymuje, osobaa nieobecny
+    class_to_cat = {
+        "za": "za",
+        "przeciw": "przeciw",
+        "wstrzymuje": "wstrzymal_sie",
+        "nieobecny": "nieobecni",
+        "nieobecni": "nieobecni",
+        "brakglosu": "brak_glosu",
+    }
 
-    for row in rows:
-        cells = row.find_all("td")
-        if len(cells) < 2:
+    for osoba in soup.find_all("div", class_="osobaa"):
+        name = osoba.get_text(strip=True)
+        if not name or len(name) <= 2:
             continue
 
-        # Zwykle: Lp. / Radny / Głos
-        name_cell = cells[0] if len(cells) >= 2 else None
-        vote_cell = cells[1] if len(cells) >= 2 else None
+        classes = osoba.get("class", [])
+        cat_key = None
+        for cls in classes:
+            if cls in class_to_cat:
+                cat_key = class_to_cat[cls]
+                break
 
-        # Lub: Lp. / Radny / Głos (gdzie Głos to trzecia kolumna)
-        if len(cells) >= 3:
-            name_cell = cells[1]
-            vote_cell = cells[2]
-
-        if not name_cell or not vote_cell:
+        if not cat_key:
             continue
 
-        name = name_cell.get_text(strip=True)
-        vote = vote_cell.get_text(strip=True).upper()
+        named_votes[cat_key].append(name)
 
-        # Pomiń wiersze nagłówkowe
-        if not name or name.isdigit() or "radny" in name.lower():
-            continue
+    total_named = sum(len(v) for v in named_votes.values())
+    if total_named == 0:
+        return None
 
-        if "ZA" in vote:
-            votes_detail["named_votes"]["za"].append(name)
-            votes_detail["counts"]["za"] += 1
-        elif "PRZECIW" in vote:
-            votes_detail["named_votes"]["przeciw"].append(name)
-            votes_detail["counts"]["przeciw"] += 1
-        elif "WSTRZYMAŁ" in vote or "WSTRZYMUJĘ" in vote:
-            votes_detail["named_votes"]["wstrzymal_sie"].append(name)
-            votes_detail["counts"]["wstrzymal_sie"] += 1
-        elif "NIEOBECN" in vote:
-            votes_detail["named_votes"]["nieobecni"].append(name)
-            votes_detail["counts"]["nieobecni"] += 1
+    for cat in named_votes:
+        counts[cat] = len(named_votes[cat])
 
-    return votes_detail
+    return {
+        "topic": topic[:500],
+        "counts": counts,
+        "named_votes": named_votes,
+    }
 
 
 # ============================================================================
@@ -586,46 +669,39 @@ def build_profiles_json(output: dict, profiles_path: str):
 # Main
 # ============================================================================
 
-def scrape(output_path, profiles_path, debug=False):
-    """Główna funkcja scrapowania."""
-    session = requests.Session()
+def scrape(output_path, profiles_path, debug=False, max_sessions=0):
+    """Glowna funkcja scrapowania."""
+    http_session = requests.Session()
 
-    print("\n=== Radoskop Katowice — Scraper głosowań (eSesja) ===")
+    print("\n=== Radoskop Katowice  Scraper glosowan (eSesja) ===")
 
-    # Pobierz listę głosowań
-    print("\n[1/3] Pobieranie listy głosowań...")
-    try:
-        html = fetch_votes_list(session, debug=debug)
-        votes_meta = parse_votes_list(html, debug=debug)
-    except Exception as e:
-        print(f"BŁĄD: {e}")
+    # Step 1: fetch session list from paginated /glosowania/ archive
+    print("\n[1/3] Pobieranie listy sesji...")
+    session_list = fetch_session_list(http_session, debug=debug)
+
+    if not session_list:
+        print("BLAD: Nie znaleziono sesji")
         sys.exit(1)
 
-    if not votes_meta:
-        print("BŁĄD: Nie znaleziono głosowań")
-        sys.exit(1)
+    print(f"  Znaleziono: {len(session_list)} sesji")
 
-    print(f"  Znaleziono: {len(votes_meta)} głosowań")
+    if max_sessions > 0:
+        session_list = session_list[:max_sessions]
 
-    # Pobierz szczegóły każdego głosowania
-    print(f"\n[2/3] Pobieranie szczegółów ({len(votes_meta)} głosowań)...")
+    # Step 2: for each session, fetch its vote list and then each vote detail
+    print(f"\n[2/3] Pobieranie glosowan z {len(session_list)} sesji...")
     all_votes = []
 
-    for i, meta in enumerate(votes_meta):
-        html = fetch_vote_detail(session, meta["url"], debug=debug)
-        if html:
-            vote_detail = parse_vote_detail(html, meta["url"], debug=debug)
+    for i, session_info in enumerate(session_list):
+        print(f"  [{i+1}/{len(session_list)}] {session_info['date']}  {session_info.get('title', '')[:60]}")
+        session_votes = fetch_session_votes(http_session, session_info, debug=debug)
 
-            # Ekstraktuj datę z URL (jeśli dostępna)
-            date_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", meta["url"])
-            session_date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}" if date_match else "unknown"
-
-            vote_id = f"{session_date}_{i:03d}_000"
-
+        for idx, vote_detail in enumerate(session_votes):
+            vote_id = f"{session_info['date']}_{idx:03d}_000"
             all_votes.append({
                 "id": vote_id,
-                "source_url": meta["url"],
-                "session_date": session_date,
+                "source_url": vote_detail.get("source_url", session_info["url"]),
+                "session_date": session_info["date"],
                 "session_number": "",
                 "topic": vote_detail.get("topic", ""),
                 "druk": None,
@@ -634,26 +710,31 @@ def scrape(output_path, profiles_path, debug=False):
                 "named_votes": vote_detail.get("named_votes", {}),
             })
 
-        if (i + 1) % 50 == 0:
-            print(f"  Pobrano: {i+1}/{len(votes_meta)}...")
-
+        print(f"    {len(session_votes)} glosowan")
         time.sleep(DELAY)
 
-    print(f"  Pobrano: {len(all_votes)} głosowań z danymi imiennymi")
+    print(f"  Pobrano: {len(all_votes)} glosowan z danymi imiennymi")
 
     if not all_votes:
-        print("BŁĄD: Brak głosowań z danymi")
+        print("BLAD: Brak glosowan z danymi")
         sys.exit(1)
 
-    # Załaduj profile
-    print(f"\n[3/3] Budowanie danych wyjściowych...")
+    print(f"\n[3/3] Budowanie danych wyjsciowych...")
     profiles = load_profiles(profiles_path)
 
     if not profiles:
-        profiles = {name: {"name": name, "club": club, "district": None}
-                   for name, club in COUNCILORS.items()}
+        # Build profiles keyed by both "Firstname Lastname" and "Lastname Firstname"
+        # so lookups work regardless of name format from eSesja.
+        profiles = {}
+        for name, club in COUNCILORS.items():
+            entry = {"name": name, "club": club, "district": None}
+            profiles[name] = entry
+            parts = name.split()
+            if len(parts) >= 2:
+                profiles[f"{parts[-1]} {' '.join(parts[:-1])}"] = entry
+                profiles[f"{parts[-1]} {parts[0]}"] = entry
         if profiles:
-            print(f"  Załadowano profile: {len(profiles)} radnych (z listy hardcoded)")
+            print(f"  Zaladowano profile: {len(COUNCILORS)} radnych (z listy hardcoded)")
         else:
             print(f"  UWAGA: Brak profili — kluby będą oznaczone jako '?'")
     else:
@@ -717,7 +798,11 @@ def main():
     )
     parser.add_argument(
         "--debug", action="store_true",
-        help="Włącz szczegółowe logowanie"
+        help="Wlacz szczegolowe logowanie"
+    )
+    parser.add_argument(
+        "--max-sessions", type=int, default=0,
+        help="Maks. sesji (0=wszystkie)"
     )
     args = parser.parse_args()
 
@@ -725,6 +810,7 @@ def main():
         output_path=args.output,
         profiles_path=args.profiles,
         debug=args.debug,
+        max_sessions=args.max_sessions,
     )
 
 
