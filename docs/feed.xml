@@ -5,7 +5,7 @@
   <link href="https://katowice.radoskop.pl/feed.xml" rel="self" type="application/atom+xml"/>
   <link href="https://katowice.radoskop.pl/" rel="alternate" type="text/html"/>
   <id>https://katowice.radoskop.pl/</id>
-  <updated>2026-03-31T15:44:39Z</updated>
+  <updated>2026-04-02T03:19:17Z</updated>
   <author>
     <name>Radoskop</name>
     <uri>https://radoskop.pl</uri>
@@ -17,6 +17,25 @@
     <published>2029-07-15T12:00:00+01:00</published>
     <updated>2029-07-15T12:00:00+01:00</updated>
     <summary type="html">Tomasz Maśnica. wzmożonej kontroli Straży Miejskiej i Policji w rejonie Sklepu Nocnego oraz Placu Miast Partnerskich przy ul. Koszalińskiej w Ligocie.</summary>
+    <category term="interpelacja"/>
+  </entry>
+  <entry>
+    <title>Interpelacja: konieczności podjęcia działań wobec zniszczonego budynku przy ul. gen. Józefa Hallera 28 w Katowicac</title>
+    <link href="https://katowice.radoskop.pl/profil/maria-rys/" rel="alternate" type="text/html"/>
+    <id>https://katowice.radoskop.pl/profil/maria-rys/#interpelacja</id>
+    <published>2026-03-31T12:00:00+01:00</published>
+    <updated>2026-03-31T12:00:00+01:00</updated>
+    <summary type="html">Maria Ryś. konieczności podjęcia działań wobec zniszczonego budynku przy ul. gen. Józefa Hallera 28 w Katowicach</summary>
+    <category term="interpelacja"/>
+  </entry>
+  <entry>
+    <title>Interpelacja: spotkania z mieszkańcami dotyczącego rozwiązań drogowych w rejonie ulic: Jankego, Fabrycznej i Leśne</title>
+    <link href="https://katowice.radoskop.pl/interpelacje/" rel="alternate" type="text/html"/>
+    <id>https://katowice.radoskop.pl/interpelacje/#interpelacja</id>
+    <published>2026-03-30T12:00:00+01:00</published>
+    <updated>2026-03-30T12:00:00+01:00</updated>
+    <summary type="html">Adam Lejman-Gąska
+Maria Ryś. spotkania z mieszkańcami dotyczącego rozwiązań drogowych w rejonie ulic: Jankego, Fabrycznej i Leśnej</summary>
     <category term="interpelacja"/>
   </entry>
   <entry>
@@ -254,23 +273,6 @@
     <category term="interpelacja"/>
   </entry>
   <entry>
-    <title>Zapytanie: o upamiętnienie w przestrzeni miejskiej osoby prof. Bożeny Hager-Małeckiej</title>
-    <link href="https://katowice.radoskop.pl/interpelacje/" rel="alternate" type="text/html"/>
-    <id>https://katowice.radoskop.pl/interpelacje/#interpelacja</id>
-    <published>2026-03-10T12:00:00+01:00</published>
-    <updated>2026-03-10T12:00:00+01:00</updated>
-    <summary type="html">Barbara Mańdok
-Krzysztof Pieczyński
-Borys Pronobis
-Maria Ryś
-Adam Skowron
-Damian Stępień
-Łukasz Hankus
-Agnieszka Piątek
-Roch Sobula. o upamiętnienie w przestrzeni miejskiej osoby prof. Bożeny Hager-Małeckiej</summary>
-    <category term="interpelacja"/>
-  </entry>
-  <entry>
     <title>Interpelacja: uwzględnienia w projekcie planu ogólnego miasta Katowice wytycznych chroniących interesy mieszkańców</title>
     <link href="https://katowice.radoskop.pl/profil/leszek-piechota/" rel="alternate" type="text/html"/>
     <id>https://katowice.radoskop.pl/profil/leszek-piechota/#interpelacja</id>
@@ -286,15 +288,6 @@ Roch Sobula. o upamiętnienie w przestrzeni miejskiej osoby prof. Bożeny Hager-
     <published>2026-03-09T12:00:00+01:00</published>
     <updated>2026-03-09T12:00:00+01:00</updated>
     <summary type="html">Barbara Mańdok. poprawy bezpieczeństwa na ul. Gospodarczej / Nowy Nikiszowiec/ poprzez montaż progu zwalniającego (wyniesienia) na przejściu ulicznym na nowo wybudowa</summary>
-    <category term="interpelacja"/>
-  </entry>
-  <entry>
-    <title>Interpelacja: utworzenia dodatkowych miejsc parkingowych w rejonie Miejskiego Domu Kultury „Szopienice – Giszowiec</title>
-    <link href="https://katowice.radoskop.pl/profil/maria-rys/" rel="alternate" type="text/html"/>
-    <id>https://katowice.radoskop.pl/profil/maria-rys/#interpelacja</id>
-    <published>2026-03-08T12:00:00+01:00</published>
-    <updated>2026-03-08T12:00:00+01:00</updated>
-    <summary type="html">Maria Ryś. utworzenia dodatkowych miejsc parkingowych w rejonie Miejskiego Domu Kultury „Szopienice – Giszowiec” przy ul. Hallera 28 w Katowicach</summary>
     <category term="interpelacja"/>
   </entry>
   <entry>
